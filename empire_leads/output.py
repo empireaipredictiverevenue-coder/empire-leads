@@ -39,21 +39,47 @@ def write_csv(leads: list[Lead], path: str | Path, append: bool = False) -> int:
     return count
 
 
-def print_results(results: list[ScanResult], verbose: bool = False) -> None:
-    """Pretty-print scan results to terminal."""
-    total_leads = sum(len(r.leads) for r in results)
-    total_errors = sum(1 for r in results if r.error)
-    print(f"\n── Results: {total_leads} leads from {len(results)} scans ({total_errors} errors) ──")
+def print_result(result: ScanResult, verbose: bool = False) -> None:
+    """Pretty-print a single ScanResult to terminal."""
+    r = result
+    print(f"\n── Results: {r.total_found} found, {r.total_deduped} deduped in {r.time_s}s ──")
 
-    for r in results:
-        if r.error:
-            print(f"  ✗ {r.source}/{r.niche}: {r.error}")
-        elif r.leads:
-            print(f"  ✓ {r.source}/{r.niche}: {len(r.leads)} leads in {r.elapsed_seconds:.1f}s")
-            if verbose:
-                for lead in r.leads[:5]:
-                    print(f"      {lead.name[:50]:50s} | {lead.phone[:16]:16s} | {lead.city[:12]}")
-                if len(r.leads) > 5:
-                    print(f"      ... and {len(r.leads) - 5} more")
+    for src, src_result in (r.results or {}).items():
+        count = src_result.get("leads", 0)
+        elapsed = src_result.get("time_s", 0)
+        error = src_result.get("error")
+        if error:
+            print(f"  ✗ {src}: {error}")
+        elif count:
+            print(f"  ✓ {src}: {count} leads in {elapsed}s")
         else:
-            print(f"  ∼ {r.source}/{r.niche}: 0 leads in {r.elapsed_seconds:.1f}s")
+            print(f"  ∼ {src}: 0 leads in {elapsed}s")
+
+    if r.leads and verbose:
+        print()
+        for lead in r.leads[:5]:
+            phone = (lead.phone or "")[:16]
+            city = (lead.city or lead.state or "")[:12]
+            src = lead.source or ""
+            print(f"  {lead.name[:48]:48s} | {phone:16s} | {city:12s} | {src}")
+        if len(r.leads) > 5:
+            print(f"  ... and {len(r.leads) - 5} more")
+
+    elif r.leads and not verbose:
+        print(f"\n  {len(r.leads)} leads. Use --verbose for details.\n")
+
+
+def save_results(result: ScanResult, output_path: str, fmt: str = "jsonl",
+                 verbose: bool = False) -> int:
+    """Save results to file and/or print summary."""
+    if output_path:
+        path = Path(output_path)
+        if fmt == "jsonl":
+            count = write_jsonl(result.leads, path)
+        else:
+            count = write_csv(result.leads, path)
+        print(f"Saved {count} leads to {path}", file=sys.stderr)
+    else:
+        print_result(result, verbose)
+
+    return 0 if result.leads else 1

@@ -13,7 +13,7 @@ class Lead:
 
     # ── Core ────────────────────────────────────────────────
     name: str
-    source: str           # e.g. "overpass:osm", "county_permits:maricopa"
+    source: str           # e.g. "overpass", "reddit", "nws", "google_places"
     niche: str            # e.g. "roofing", "hvac"
 
     # ── Contact ─────────────────────────────────────────────
@@ -34,8 +34,8 @@ class Lead:
     category: str = ""
     hours: str = ""
     about: str = ""
-    facebook: str = ""
-    linkedin: str = ""
+    social_links: str = ""
+    subreddit: str = ""
 
     # ── Metadata ────────────────────────────────────────────
     discovered_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -51,9 +51,11 @@ class Lead:
 
 @dataclass
 class ScanResult:
-    """Result of scanning one (source, niche) pair."""
+    """Aggregated result from multi-source discovery."""
     source: str
     niche: str
     leads: list[Lead] = field(default_factory=list)
-    elapsed_seconds: float = 0.0
-    error: Optional[str] = None
+    total_found: int = 0
+    total_deduped: int = 0
+    time_s: float = 0.0
+    results: dict | None = None  # per-source breakdown

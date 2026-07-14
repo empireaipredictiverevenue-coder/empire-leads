@@ -7,90 +7,111 @@ import time
 from typing import Optional
 
 from .models import Lead, ScanResult
-from .sources import overpass_discover
-from .output import write_jsonl, write_csv, print_results
+from .sources import overpass_discover, reddit_discover, nws_discover, google_discover
 
-logger = logging.getLogger("empire-leads.engine")
+log = logging.getLogger(__name__)
+
+SOURCES = {
+    "overpass": overpass_discover,
+    "reddit": reddit_discover,
+    "nws": nws_discover,
+    "google_places": google_discover,
+}
+
+SOURCE_DESCRIPTIONS = {
+    "overpass": "OpenStreetMap/Overpass — free, unlimited business listings",
+    "reddit": "Reddit no-API — buying-intent signals from niche subreddits",
+    "nws": "NWS storm alerts — severe weather as lead triggers",
+    "google_places": "Google Places API — enrichment (requires GOOGLE_MAPS_API_KEY)",
+}
+
+
+def list_sources() -> dict[str, str]:
+    return dict(SOURCES)
 
 
 def discover(
     niche: str,
-    near: str = "",
-    radius_m: int = 20000,
-    limit: int = 50,
+    near: Optional[str] = None,
+    *,
     sources: Optional[list[str]] = None,
-) -> list[ScanResult]:
-    """
-    Discover leads across all configured sources.
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    state: Optional[str] = None,
+    limit_per_source: int = 20,
+    **kwargs,
+) -> ScanResult:
+    """Run lead discovery across multiple sources.
 
     Args:
-        niche: Business type (roofing, hvac, etc.)
-        near: City/area or "lat,lon"
-        radius_m: Search radius in meters
-        limit: Max leads per source
-        sources: Which sources to use (default: all available)
+        niche: Target niche (roofing, hvac, plumbing, etc.).
+        near: City/area name (for geo sources).
+        sources: List of source names. None = all.
+        lat/lon: Manual coordinate override.
+        state: State filter (for NWS).
+        limit_per_source: Max leads per source.
+
+    Returns:
+        ScanResult with merged, deduped leads.
     """
-    available = {"overpass": overpass_discover}
-    active = {k: v for k, v in available.items() if not sources or k in sources}
+    active_sources = sources if sources is not None else ["overpass"]
+    start = time.time()
 
-    results: list[ScanResult] = []
-    for name, fn in active.items():
-        start = time.time()
+    leads: list[Lead] = []
+    results = {}
+
+    for name in active_sources:
+        if name not in SOURCES:
+            log.warning(f"Unknown source: {name}")
+            continue
+
+        fn = SOURCES[name]
+        source_start = time.time()
+
         try:
-            leads = fn(niche=niche, near=near, radius_m=radius_m, limit=limit)
-            elapsed = time.time() - start
-            results.append(ScanResult(
-                source=name,
-                niche=niche,
-                leads=leads,
-                elapsed_seconds=round(elapsed, 2),
-            ))
-            logger.info("%s/%s: %d leads in %.1fs", name, niche, len(leads), elapsed)
+            if name == "overpass":
+                result = fn(niche, near=near or "", lat=lat, lon=lon,
+                            radius_m=kwargs.get("radius_m", 20000), limit=limit_per_source)
+            elif name == "reddit":
+                result = fn(niche, limit=limit_per_source)
+            elif name == "nws":
+                result = fn(state_filter=state, max_alerts=limit_per_source)
+            elif name == "google_places":
+                if lat is None or lon is None:
+                    log.info(f"[{name}] Skipping — no lat/lon")
+                    continue
+                result = fn(niche, lat=lat, lon=lon, max_results=limit_per_source)
+            else:
+                result = fn(niche, limit=limit_per_source)
+
+            elapsed = time.time() - source_start
+            results[name] = {"leads": len(result), "time_s": round(elapsed, 1)}
+            leads.extend(result)
+
         except Exception as e:
-            elapsed = time.time() - start
-            logger.error("%s/%s failed after %.1fs: %s", name, niche, elapsed, e)
-            results.append(ScanResult(
-                source=name, niche=niche,
-                elapsed_seconds=round(elapsed, 2),
-                error=str(e),
-            ))
+            elapsed = time.time() - source_start
+            log.warning(f"[{name}] Error after {elapsed:.1f}s: {e}")
+            results[name] = {"leads": 0, "time_s": round(elapsed, 1), "error": str(e)}
 
-    return results
+    total_time = time.time() - start
 
+    # Dedup by name (case-insensitive)
+    seen_names: set[str] = set()
+    deduped: list[Lead] = []
+    for lead in leads:
+        key = (lead.name or "").strip().lower()
+        if key and key not in seen_names:
+            seen_names.add(key)
+            deduped.append(lead)
+        elif not key:
+            deduped.append(lead)
 
-def discover_batch(
-    niches: list[str],
-    near: str = "",
-    radius_m: int = 20000,
-    limit: int = 50,
-    sources: Optional[list[str]] = None,
-) -> list[ScanResult]:
-    """Run discover for multiple niches."""
-    all_results: list[ScanResult] = []
-    for niche in niches:
-        all_results.extend(discover(niche, near, radius_m, limit, sources))
-    return all_results
-
-
-def save_results(
-    results: list[ScanResult],
-    output_path: str = "",
-    fmt: str = "jsonl",
-    verbose: bool = False,
-) -> int:
-    """Save scan results and print summary. Returns total leads."""
-    all_leads: list[Lead] = []
-    for r in results:
-        all_leads.extend(r.leads)
-
-    if output_path:
-        if fmt == "jsonl":
-            count = write_jsonl(all_leads, output_path)
-        elif fmt == "csv":
-            count = write_csv(all_leads, output_path)
-        else:
-            raise ValueError(f"unsupported format: {fmt}")
-        print(f"Wrote {count} leads to {output_path}")
-
-    print_results(results, verbose=verbose)
-    return len(all_leads)
+    return ScanResult(
+        source=f"multi:{','.join(active_sources)}",
+        niche=niche,
+        leads=deduped,
+        total_found=len(leads),
+        total_deduped=len(deduped),
+        time_s=round(total_time, 1),
+        results=results,
+    )

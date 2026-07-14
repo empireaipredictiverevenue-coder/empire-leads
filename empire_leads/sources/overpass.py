@@ -173,6 +173,8 @@ def discover(
     near: str = "",
     radius_m: int = 20000,
     limit: int = 100,
+    lat: float | None = None,
+    lon: float | None = None,
 ) -> list[Lead]:
     """
     Discover businesses via Overpass API.
@@ -182,9 +184,14 @@ def discover(
         near: City/area name or "lat,lon"
         radius_m: Search radius in meters (default 20km)
         limit: Max results to return
+        lat: Latitude override (if provided, lon must also be set)
+        lon: Longitude override
     """
     # Resolve location
-    lat, lon = _resolve_location(near)
+    if lat is not None and lon is not None:
+        pass  # use provided coords
+    else:
+        lat, lon = _resolve_location(near)
     if lat is None:
         logger.warning("No location specified, using Phoenix, AZ")
         lat, lon = 33.4484, -112.0740
