@@ -58,6 +58,32 @@ def _build_parser() -> argparse.ArgumentParser:
     # ── list-niches ───────────────────────────────────────
     sub.add_parser("list-niches", help="List supported business niches")
 
+    # ── trend ("research lab") ────────────────────────────
+    trend = sub.add_parser("trend", help="Score niches by market demand signal")
+    trend.add_argument("niche", help="Business type to score")
+    trend.add_argument("--metros", nargs="*", default=["Phoenix, AZ"],
+                       help="Cities to score against")
+    trend.add_argument("--sources", nargs="*", default=["reddit", "overpass", "craigslist"],
+                       help="Signals to use")
+    trend.add_argument("--output", "-o", default="", help="Output JSONL file")
+    trend.add_argument("--quiet", "-q", action="store_true")
+
+    # ── factory ("factory room") ──────────────────────────
+    factory = sub.add_parser("factory", help="Spawn + manage micro-verticals")
+    factory.add_argument("--spawn", nargs=2, metavar=("NICHE", "METRO"),
+                         help="Spawn new vertical")
+    factory.add_argument("--list", action="store_true", help="List all verticals")
+    factory.add_argument("--kill", metavar="VERTICAL_ID", help="Kill vertical by ID")
+    factory.add_argument("--scan", metavar="VERTICAL_ID",
+                         help="Run discover for one vertical, update KPIs")
+    factory.add_argument("--output", "-o", default="", help="Output file")
+
+    # ── prune ("war room") ────────────────────────────────
+    prune = sub.add_parser("prune", help="Daily portfolio review + auto-kill")
+    prune.add_argument("--summary", action="store_true",
+                       help="Print Telegram-ready summary")
+    prune.add_argument("--output", "-o", default="", help="Decision log path")
+
     return p
 
 
@@ -135,6 +161,94 @@ def _cmd_list_niches() -> int:
     return 0
 
 
+def _cmd_trend(args: argparse.Namespace) -> int:
+    if args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
+    from .trend import score_trend
+    results = score_trend(args.niche, args.metros, args.sources)
+    out_path = args.output or ""
+    import json as _json
+    lines = [_json.dumps(t.to_dict()) for t in results]
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"wrote {len(lines)} trends -> {out_path}")
+    else:
+        for line in lines:
+            print(line)
+    return 0
+
+
+def _cmd_factory(args: argparse.Namespace) -> int:
+    from .factory import (
+        spawn_vertical, load_local, save_local, kill_vertical,
+        update_kpi, sync_to_hub, vertical_id,
+    )
+    verticals = load_local()
+
+    if args.spawn:
+        niche, metro = args.spawn
+        vid = vertical_id(niche, metro)
+        if any(v.id == vid for v in verticals):
+            print(f"already exists: {vid}")
+            return 1
+        v = spawn_vertical(niche, metro, notes="manually spawned")
+        verticals.append(v)
+        save_local(verticals)
+        synced = sync_to_hub(v)
+        print(f"spawned {vid} ({niche} @ {metro}) hub={'ok' if synced else 'fail'}")
+        return 0
+
+    if args.kill:
+        for v in verticals:
+            if v.id == args.kill:
+                kill_vertical(v, reason="manual kill")
+                save_local(verticals)
+                sync_to_hub(v)
+                print(f"killed {v.id}")
+                return 0
+        print(f"not found: {args.kill}")
+        return 1
+
+    if args.scan:
+        from .engine import discover
+        for v in verticals:
+            if v.id == args.scan:
+                r = discover(niche=v.niche, near=v.metro, limit_per_source=10)
+                update_kpi(v, leads_found=len(r.leads))
+                save_local(verticals)
+                sync_to_hub(v)
+                print(f"scanned {v.id} -> {len(r.leads)} new leads")
+                return 0
+        print(f"not found: {args.scan}")
+        return 1
+
+    # default: list
+    import json as _json
+    for v in verticals:
+        print(_json.dumps(v.to_dict()))
+    return 0
+
+
+def _cmd_prune(args: argparse.Namespace) -> int:
+    from .factory import load_local, save_local, sync_to_hub
+    from .pruner import review_portfolio, summary_text
+    verticals = load_local()
+    decisions = review_portfolio(verticals)
+    save_local(verticals)
+    for v in verticals:
+        sync_to_hub(v)
+    if args.summary or not args.output:
+        print(summary_text(decisions))
+    if args.output:
+        import json as _json
+        with open(args.output, "w") as f:
+            for d in decisions:
+                f.write(_json.dumps(d.__dict__) + "\n")
+        print(f"wrote {len(decisions)} decisions -> {args.output}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -147,6 +261,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_list_sources()
     elif args.command == "list-niches":
         return _cmd_list_niches()
+    elif args.command == "trend":
+        return _cmd_trend(args)
+    elif args.command == "factory":
+        return _cmd_factory(args)
+    elif args.command == "prune":
+        return _cmd_prune(args)
     else:
         parser.print_help()
         return 1
