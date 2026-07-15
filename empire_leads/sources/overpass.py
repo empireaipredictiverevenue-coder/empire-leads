@@ -37,6 +37,14 @@ BUSINESS_TAGS: list[tuple[str, str, str]] = [
     ("legal",    "office", "lawyer"),
     ("legal",    "office", "notary"),
     ("legal",    "amenity", "lawyer"),
+    # Dental: most dental practices tagged amenity=doctors + healthcare:specialty
+    ("dental",   "amenity", "dentist"),
+    ("dental",   "office",  "dentist"),
+    # Medical: doctors, clinics, hospitals
+    ("medical",  "amenity", "doctors"),
+    ("medical",  "amenity", "clinic"),
+    ("medical",  "amenity", "hospital"),
+    ("medical",  "healthcare", "doctor"),
     ("general",  "shop",  "trade"),
 ]  # fmt: on
 
