@@ -84,6 +84,38 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="Print Telegram-ready summary")
     prune.add_argument("--output", "-o", default="", help="Decision log path")
 
+    # ── public-apis (source factory) ──────────────────────
+    pa = sub.add_parser("public-apis",
+                        help="List/generate/run sources from public-apis repo")
+    pa_sub = pa.add_subparsers(dest="pa_command", required=True)
+
+    pa_list = pa_sub.add_parser("list", help="List catalog entries")
+    pa_list.add_argument("--category", action="append", help="Filter by category")
+    pa_list.add_argument("--auth", help='Filter by auth (e.g. "No", "apiKey")')
+    pa_list.add_argument("--https-only", action="store_true", default=True)
+    pa_list.add_argument("--cors-yes-only", action="store_true")
+    pa_list.add_argument("--keyword", help="Search name + description")
+    pa_list.add_argument("--limit", type=int, default=50, help="Max entries to show")
+    pa_list.add_argument("--categories-only", action="store_true",
+                         help="Just list category names + counts")
+
+    pa_gen = pa_sub.add_parser("generate",
+                               help="Generate source skeletons from catalog")
+    pa_gen.add_argument("--category", action="append")
+    pa_gen.add_argument("--auth", default="No")
+    pa_gen.add_argument("--https-only", type=bool, default=True)
+    pa_gen.add_argument("--keyword", help="Search keyword")
+    pa_gen.add_argument("--max", type=int, default=20,
+                        help="Cap entries to generate (avoid runaway)")
+
+    pa_run = pa_sub.add_parser("run", help="Run a generated source by slug")
+    pa_run.add_argument("slug", help="Source slug, e.g. cat_facts")
+    pa_run.add_argument("--niche", default="general")
+    pa_run.add_argument("--limit", type=int, default=20)
+
+    pa_ls = pa_sub.add_parser("ls-generated",
+                              help="List already-generated source files")
+
     return p
 
 
@@ -249,6 +281,71 @@ def _cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_public_apis(args: argparse.Namespace) -> int:
+    from .sources.public_apis import (
+        get_catalog, filter_catalog, generate, discover,
+        list_categories, list_generated,
+    )
+    if args.pa_command == "list":
+        catalog = get_catalog()
+        if args.categories_only:
+            cats = list_categories(catalog)
+            for c, n in cats.items():
+                print(f"  {c:30s} {n}")
+            return 0
+        entries = filter_catalog(
+            catalog,
+            categories=args.category,
+            auth=args.auth,
+            https_only=args.https_only,
+            cors_yes_only=args.cors_yes_only,
+            keyword=args.keyword,
+        )
+        for e in entries[: args.limit]:
+            print(f"  [{e.category:20s}] {e.name:35s} auth={e.auth:12s} "
+                  f"https={int(e.https)} cors={e.cors:7s} {e.url}")
+        print(f"\n({len(entries)} entries, {len(entries[: args.limit])} shown)")
+        return 0
+
+    if args.pa_command == "generate":
+        catalog = get_catalog()
+        entries = filter_catalog(
+            catalog,
+            categories=args.category,
+            auth=args.auth,
+            https_only=args.https_only,
+            keyword=args.keyword,
+        )[: args.max]
+        if not entries:
+            print("no entries matched")
+            return 1
+        from .sources.public_apis.generator import generate_many
+        paths = generate_many(entries)
+        for p in paths:
+            print(f"  wrote {p.name}")
+        print(f"\nGenerated {len(paths)} source files")
+        return 0
+
+    if args.pa_command == "run":
+        try:
+            leads = discover(args.slug, niche=args.niche, limit=args.limit)
+        except FileNotFoundError as e:
+            print(f"error: {e}")
+            return 1
+        import json as _json
+        for lead in leads:
+            print(_json.dumps(lead.to_dict(), default=str))
+        print(f"\n({len(leads)} leads)")
+        return 0
+
+    if args.pa_command == "ls-generated":
+        for p in list_generated():
+            print(f"  {p.stem}")
+        return 0
+
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -267,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_factory(args)
     elif args.command == "prune":
         return _cmd_prune(args)
+    elif args.command == "public-apis":
+        return _cmd_public_apis(args)
     else:
         parser.print_help()
         return 1
