@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from .models import Lead, ScanResult
 from .sources import (overpass_discover, reddit_discover, nws_discover,
                        google_discover, carrier_discover,
-                       state_license_discover)
+                       state_license_discover, legal_discover)
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ SOURCES: dict[str, Callable] = {
     "google_places": google_discover,
     "carrier_rosters": carrier_discover,
     "state_licenses": state_license_discover,
+    "legal_licenses": legal_discover,
 }
 
 SOURCE_DESCRIPTIONS = {
@@ -29,6 +30,7 @@ SOURCE_DESCRIPTIONS = {
     "google_places": "Google Places API — enrichment (requires GOOGLE_MAPS_API_KEY)",
     "carrier_rosters": "Insurance DRP contractor directories",
     "state_licenses": "State contractor license DBs (TX/GA/OH scrapable)",
+    "legal_licenses": "Lawyer/attorney registry (10 state bar associations)",
 }
 
 
@@ -74,6 +76,29 @@ def _license_to_lead(c, niche: str) -> "Lead":
         latitude=c.latitude,
         longitude=c.longitude,
         category=c.license_class or "",
+        about="; ".join(about_parts),
+    )
+
+
+def _lawyer_to_lead(c, niche: str) -> "Lead":
+    """Convert a LawyerLead to a Lead."""
+    about_parts = []
+    if c.bar_state:
+        about_parts.append(f"Bar state: {c.bar_state}")
+    if c.practice_areas:
+        about_parts.append(f"Practice: {', '.join(c.practice_areas)}")
+    return Lead(
+        name=c.name or c.firm,
+        source=f"legal:{c.source}",
+        niche="legal",
+        phone=c.phone,
+        address=c.address,
+        city=c.city,
+        state=c.state,
+        zip_code=c.zip,
+        latitude=c.latitude,
+        longitude=c.longitude,
+        category=", ".join(c.practice_areas) if c.practice_areas else "legal",
         about="; ".join(about_parts),
     )
 
@@ -137,6 +162,10 @@ def discover(
                 result = fn(niche=niche, near=near or "", state=state or "TX",
                             limit=limit_per_source)
                 result = [_license_to_lead(c, niche) for c in result]
+            elif name == "legal_licenses":
+                result = fn(niche="legal", near=near or "", state=state or "NY",
+                            limit=limit_per_source)
+                result = [_lawyer_to_lead(c, niche) for c in result]
             else:
                 result = fn(niche, limit=limit_per_source)
 

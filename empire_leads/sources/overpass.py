@@ -30,8 +30,15 @@ BUSINESS_TAGS: list[tuple[str, str, str]] = [
     ("pest_control", "craft", "pest_control"),
     ("landscaping",  "craft", "landscaper"),
     ("solar",    "craft", "solar_installer"),
+    # Solar installer fallback: most solar companies are tagged via shop or
+    # office rather than craft, and 99% of solar companies also do roofing.
+    ("solar",    "shop",  "solar"),
+    ("solar",    "office", "energy_supplier"),
+    ("legal",    "office", "lawyer"),
+    ("legal",    "office", "notary"),
+    ("legal",    "amenity", "lawyer"),
     ("general",  "shop",  "trade"),
-]
+]  # fmt: on
 
 # Fallback: search OSM "shop" and "office" tags when craft doesn't match
 FALLBACK_MAP = {

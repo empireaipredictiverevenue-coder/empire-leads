@@ -5,6 +5,7 @@ from .nws import discover as nws_discover
 from .google_places import discover as google_discover
 from .carrier_rosters import discover as carrier_discover
 from .state_licenses import discover as state_license_discover
+from .legal_licenses import discover as legal_discover
 
 SOURCE_DESCRIPTIONS = {
     "overpass": "OpenStreetMap/Overpass — free, unlimited business listings",
@@ -13,4 +14,5 @@ SOURCE_DESCRIPTIONS = {
     "google_places": "Google Places API — enrichment (requires GOOGLE_MAPS_API_KEY)",
     "carrier_rosters": "Insurance carrier DRP rosters — approved contractor directories",
     "state_licenses": "State contractor license databases — verified records (TX/GA/OH scrapable)",
+    "legal_licenses": "Lawyer/attorney sources via OSM + 10 state bar association registries",
 }
