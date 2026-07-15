@@ -50,6 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--output", "-o", default="", help="Output file path")
     batch.add_argument("--format", "-f", choices=["jsonl", "csv"], default="jsonl")
     batch.add_argument("--verbose", "-v", action="store_true", help="Show lead details")
+    batch.add_argument("--quiet", "-q", action="store_true", help="Suppress info logging")
 
     # ── list-sources ──────────────────────────────────────
     sub.add_parser("list-sources", help="List available lead sources")
@@ -77,6 +78,9 @@ def _cmd_discover(args: argparse.Namespace) -> int:
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
+    if args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
+
     niches: list[str] = []
     if args.niches:
         niches.extend(args.niches)
@@ -120,13 +124,14 @@ def _cmd_list_sources() -> int:
         print(f"  {name:20s} {desc}")
     return 0
 
-
 def _cmd_list_niches() -> int:
-    from .sources.overpass import NICHE_TAGS
+    from .sources.overpass import BUSINESS_TAGS
+    seen = set()
     print("Supported business niches:")
-    for niche in sorted(NICHE_TAGS.keys()):
-        tags = NICHE_TAGS[niche]
-        print(f"  {niche:20s} (tag: {tags[0]}={tags[1]})")
+    for n, key, val in BUSINESS_TAGS:
+        if n not in seen:
+            seen.add(n)
+            print(f"  {n}")
     return 0
 
 

@@ -7,15 +7,17 @@ import time
 from typing import Optional
 
 from .models import Lead, ScanResult
-from .sources import overpass_discover, reddit_discover, nws_discover, google_discover
+from .sources import (overpass_discover, reddit_discover, nws_discover,
+                       google_discover, carrier_discover)
 
 log = logging.getLogger(__name__)
 
-SOURCES = {
+SOURCES: dict[str, Callable] = {
     "overpass": overpass_discover,
     "reddit": reddit_discover,
     "nws": nws_discover,
     "google_places": google_discover,
+    "carrier_rosters": carrier_discover,
 }
 
 SOURCE_DESCRIPTIONS = {
@@ -23,6 +25,7 @@ SOURCE_DESCRIPTIONS = {
     "reddit": "Reddit no-API — buying-intent signals from niche subreddits",
     "nws": "NWS storm alerts — severe weather as lead triggers",
     "google_places": "Google Places API — enrichment (requires GOOGLE_MAPS_API_KEY)",
+    "carrier_rosters": "Insurance DRP contractor directories",
 }
 
 
