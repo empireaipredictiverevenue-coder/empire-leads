@@ -8,7 +8,8 @@ from typing import Callable, Optional
 
 from .models import Lead, ScanResult
 from .sources import (overpass_discover, reddit_discover, nws_discover,
-                       google_discover, carrier_discover)
+                       google_discover, carrier_discover,
+                       state_license_discover)
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ SOURCES: dict[str, Callable] = {
     "nws": nws_discover,
     "google_places": google_discover,
     "carrier_rosters": carrier_discover,
+    "state_licenses": state_license_discover,
 }
 
 SOURCE_DESCRIPTIONS = {
@@ -26,6 +28,7 @@ SOURCE_DESCRIPTIONS = {
     "nws": "NWS storm alerts — severe weather as lead triggers",
     "google_places": "Google Places API — enrichment (requires GOOGLE_MAPS_API_KEY)",
     "carrier_rosters": "Insurance DRP contractor directories",
+    "state_licenses": "State contractor license DBs (TX/GA/OH scrapable)",
 }
 
 
@@ -47,6 +50,31 @@ def _contractor_to_lead(c, niche: str) -> "Lead":
         latitude=c.latitude,
         longitude=c.longitude,
         about=f"License state: {c.license_state}; Carrier DRP candidate",
+    )
+
+
+def _license_to_lead(c, niche: str) -> "Lead":
+    """Convert a LicensedContractor to a Lead."""
+    about_parts = []
+    if c.license_number:
+        about_parts.append(f"License: {c.license_number}")
+    if c.license_class:
+        about_parts.append(f"Class: {c.license_class}")
+    if c.expiration_date:
+        about_parts.append(f"Expires: {c.expiration_date}")
+    return Lead(
+        name=c.name or c.company,
+        source=f"license_db:{c.source}",
+        niche=niche,
+        phone=c.phone,
+        address=c.address,
+        city=c.city,
+        state=c.state,
+        zip_code=c.zip,
+        latitude=c.latitude,
+        longitude=c.longitude,
+        category=c.license_class or "",
+        about="; ".join(about_parts),
     )
 
 
@@ -105,6 +133,10 @@ def discover(
                 # carrier returns ContractorForApplication; convert to Lead
                 result = fn(niche=niche, near=near or "", limit=limit_per_source)
                 result = [_contractor_to_lead(c, niche) for c in result]
+            elif name == "state_licenses":
+                result = fn(niche=niche, near=near or "", state=state or "TX",
+                            limit=limit_per_source)
+                result = [_license_to_lead(c, niche) for c in result]
             else:
                 result = fn(niche, limit=limit_per_source)
 

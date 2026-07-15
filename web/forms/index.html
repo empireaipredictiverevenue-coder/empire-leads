@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empire AI — Free Match to Local Contractors</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.6em; }
+  .field { margin: 0.7em 0; }
+  label { display: block; font-size: 0.9em; font-weight: 600; margin-bottom: 0.2em; }
+  input, select, textarea { width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1em; }
+  textarea { min-height: 90px; }
+  button { background: #2563eb; color: white; padding: 0.7em 1.4em; border: 0; border-radius: 4px; font-size: 1em; cursor: pointer; }
+  .row { display: flex; gap: 0.7em; }
+  .row > * { flex: 1; }
+  small { color: #666; }
+  .success { background: #ecfdf5; border-left: 4px solid #10b981; padding: 1em; margin-top: 1em; }
+  .matches { margin-top: 1em; }
+  .match { border: 1px solid #e5e7eb; padding: 0.7em; border-radius: 4px; margin-bottom: 0.5em; }
+  .match strong { color: #1e40af; }
+</style>
+</head>
+<body>
+<h1>Get 3 free contractor quotes</h1>
+<p>Fast, no spam. Matched to licensed contractors in your area.</p>
+<form id="jobform" method="post" action="/homeowner-submit">
+  <div class="row">
+    <div class="field"><label>Name</label><input name="name" required></div>
+    <div class="field"><label>Phone</label><input name="phone" type="tel" required></div>
+  </div>
+  <div class="field"><label>Email</label><input name="email" type="email" required></div>
+  <div class="row">
+    <div class="field"><label>ZIP</label><input name="zip" pattern="\d{5}" required></div>
+    <div class="field"><label>Service</label>
+      <select name="niche">
+        <option value="roofing">Roofing</option>
+        <option value="hvac">HVAC</option>
+        <option value="plumbing">Plumbing</option>
+        <option value="solar">Solar</option>
+        <option value="electrical">Electrical</option>
+        <option value="kitchen">Kitchen</option>
+        <option value="bathroom">Bathroom</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>What's the job?</label>
+    <textarea name="description" required placeholder="e.g. leak around chimney after recent storm"></textarea>
+  </div>
+  <div class="row">
+    <div class="field"><label>Property type</label>
+      <select name="property_type">
+        <option value="single_family">Single family</option>
+        <option value="multi_family">Multi-family</option>
+        <option value="commercial">Commercial</option>
+      </select>
+    </div>
+    <div class="field"><label>Urgency</label>
+      <select name="urgency">
+        <option value="urgent">Urgent (this week)</option>
+        <option value="standard" selected>Standard (within a month)</option>
+        <option value="planning">Planning (3+ months)</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div class="field"><label>Budget min ($)</label><input name="budget_min" type="number" min="0"></div>
+    <div class="field"><label>Budget max ($)</label><input name="budget_max" type="number" min="0"></div>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="insurance_claim" value="1"> Insurance claim?</label>
+  </div>
+  <div class="field"><label>Insurance carrier (if claim)</label>
+    <select name="insurance_carrier">
+      <option value="">None</option>
+      <option value="State Farm">State Farm</option>
+      <option value="Allstate">Allstate</option>
+      <option value="Farmers">Farmers</option>
+      <option value="Liberty Mutual">Liberty Mutual</option>
+      <option value="USAA">USAA</option>
+      <option value="Progressive">Progressive</option>
+      <option value="Nationwide">Nationwide</option>
+      <option value="Travelers">Travelers</option>
+    </select>
+  </div>
+  <button type="submit">Match me with 3 contractors</button>
+</form>
+<div id="result"></div>
+<script>
+document.getElementById('jobform').onsubmit = async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/homeowner-submit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const j = await r.json();
+  const target = document.getElementById('result');
+  if (j.matches) {
+    target.innerHTML = '<div class="success"><strong>Matched!</strong> Here are ' + j.matches.length + ' contractors for you.</div>' +
+      '<div class="matches">' + j.matches.map(m =>
+        '<div class="match"><strong>' + m.company + '</strong><br>' +
+        m.city + ', ' + m.state + ' &middot; ' + m.distance_mi + 'mi away &middot; Score: ' + m.match_score +
+        (m.phone ? '<br>☎ ' + m.phone : '') +
+        (m.carrier_approved.length ? '<br>Carrier approved: ' + m.carrier_approved.join(', ') : '') +
+        '</div>'
+      ).join('') + '</div>';
+  } else {
+    target.innerHTML = '<div class="success">' + (j.message || 'Submitted. We will reach out within 24 hours.') + '</div>';
+  }
+};
+</script>
+</body>
+</html>
