@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from .models import Lead, ScanResult
 from .sources import (overpass_discover, reddit_discover, nws_discover,
@@ -29,8 +29,25 @@ SOURCE_DESCRIPTIONS = {
 }
 
 
-def list_sources() -> dict[str, str]:
-    return dict(SOURCES)
+def list_sources() -> dict:
+    return {k: SOURCE_DESCRIPTIONS[k] for k in SOURCES}
+
+
+def _contractor_to_lead(c, niche: str) -> "Lead":
+    """Convert a ContractorForApplication to a Lead for unified output."""
+    return Lead(
+        name=c.company,
+        source=f"carrier:{c.source}",
+        niche=niche,
+        phone=c.phone,
+        address=c.address,
+        city=c.city,
+        state=c.state,
+        zip_code=c.zip_code,
+        latitude=c.latitude,
+        longitude=c.longitude,
+        about=f"License state: {c.license_state}; Carrier DRP candidate",
+    )
 
 
 def discover(
@@ -84,6 +101,10 @@ def discover(
                     log.info(f"[{name}] Skipping — no lat/lon")
                     continue
                 result = fn(niche, lat=lat, lon=lon, max_results=limit_per_source)
+            elif name == "carrier_rosters":
+                # carrier returns ContractorForApplication; convert to Lead
+                result = fn(niche=niche, near=near or "", limit=limit_per_source)
+                result = [_contractor_to_lead(c, niche) for c in result]
             else:
                 result = fn(niche, limit=limit_per_source)
 
